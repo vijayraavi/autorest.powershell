@@ -272,7 +272,7 @@ export class CmdletClass extends Class {
 
       // find each parameter to the method, and find out where the value is going to come from.
       const operationParameters: Array<Expression> = values(apiCall.parameters).linq.where(each => !(each.details.default.constantValue)).linq.select(p => {
-        return values($this.properties).linq.where(each => each.metadata.parameterDefinition).linq.first(each => each.metadata.parameterDefinition === p);
+        return values($this.properties).linq.where(each => each.metadata.parameterDefinition).linq.first(each => each.metadata.parameterDefinition.details.csharp.uid === p.details.csharp.uid);
       }).linq.select(each => each ? each : new LiteralExpression('null')).linq.toArray();
 
       // is there a body parameter we should include?
@@ -597,7 +597,7 @@ export class CmdletClass extends Class {
 
         const hostParameter = this.add(new BackedProperty(parameter.details.csharp.name, td, {
           metadata: {
-            parameterDefinition: parameter.details.default.originalParam
+            parameterDefinition: parameter.details.csharp.originalHttpParameter
           },
           description: parameter.details.csharp.description,
         }));
@@ -610,14 +610,10 @@ export class CmdletClass extends Class {
       if (this.dropBodyParameter && parameter.details.csharp.isBodyParameter) {
         // we're supposed to use parameters for the body parameter instead of a big object
         const expandedBodyParameter = this.add(new BackedProperty(parameter.details.csharp.name, td, {
-          metadata: {
-            parameterDefinition: parameter.details.csharp.httpParameter
-          },
           description: parameter.details.csharp.description,
           initializer: (parameter.schema.type === JsonType.Array) ? `null` : `new ${parameter.schema.details.csharp.fullname}()`,
           setAccess: Access.Private,
           getAccess: Access.Private,
-
         }));
 
         addPowershellParameters(this, <Schema>parameter.schema, expandedBodyParameter);
@@ -636,6 +632,7 @@ export class CmdletClass extends Class {
       const parameters = [new LiteralExpression('Mandatory = true'), new LiteralExpression(`HelpMessage = "${escapeString(parameter.details.csharp.description) || 'HELP MESSAGE MISSING'}"`)];
       if (parameter.details.csharp.isBodyParameter) {
         parameters.push(new LiteralExpression('ValueFromPipeline = true'));
+        this.bodyParameter = regularCmdletParameter;
       }
       regularCmdletParameter.add(new Attribute(ParameterAttribute, { parameters }));
 

@@ -127,7 +127,7 @@ async function addCommandOperation(vname: string, parameters: Array<http.HttpOpe
     parameters: parameters.map(httpParameter => {
       // make it's own copy of the parameter since after this, 
       // the parameter can be altered for each operation individually.
-      const each = clone(httpParameter);
+      const each = clone(httpParameter, false, undefined, undefined, ['schema']);
       each.details.csharp = {
         ...each.details.default,
         name: getPascalName(each.details.default.name),
@@ -212,7 +212,7 @@ async function detect(model: codemodel.Model, service: Host): Promise<codemodel.
                   ...param.details,
                   default: {
                     ...param.details.default,
-                    originalParam: param,
+                    originalHttpParameter: param,
                     fromHost: true
                   }
                 }
