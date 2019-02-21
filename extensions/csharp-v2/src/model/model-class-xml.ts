@@ -12,7 +12,7 @@ import { EnhancedTypeDeclaration } from '../schema/extended-type-declaration';
 import { popTempVar, pushTempVar } from '../schema/primitive';
 import { ModelClass } from './model-class';
 
-import { ModelProperty } from './property';
+import { ModelField } from './property';
 
 export class XmlSerializableClass extends Class {
   private btj!: Method;
@@ -51,7 +51,7 @@ export class XmlSerializableClass extends Class {
     }
     pushTempVar();
     for (const { value: property } of items(modelClass.schema.properties)) {
-      const prop = modelClass.$<ModelProperty>(property.details.csharp.name);
+      const prop = modelClass.$<ModelField>(property.details.csharp.fieldName);
       const serializeStatement = (<EnhancedTypeDeclaration>prop.type).serializeToContainerMember(KnownMediaType.Xml, prop, container, prop.serializedName);
 
       if (property.details.csharp[HeaderProperty] === HeaderPropertyType.Header) {

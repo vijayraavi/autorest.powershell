@@ -107,7 +107,8 @@ async function nameStuffRight(codeModel: codemodel.Model, service: Host): Promis
 
       propertySchema.details.csharp = {
         ...propertyDetails,
-        name: pname // and so are the propertyNmaes
+        name: pname, // and so are the propertyNmaes
+        fieldName: `_${camelCase(fixLeadingNumber(deconstruct(pname)))}`
       };
 
       if (propertyDetails.isNamedStream) {
@@ -187,7 +188,7 @@ async function nameStuffRight(codeModel: codemodel.Model, service: Host): Promis
 
       const mine = items(virtualProperties).linq.where(each => each.value.kind === 'my-property').linq.toArray();
       const parents = items(virtualProperties).linq.where(each => each.value.kind === 'parent-property').linq.toArray();
-      const children = items(virtualProperties).linq.where(each => each.value.kind === 'child-property').linq.toArray();
+      const children = items(virtualProperties).linq.where(each => each.value.kind === 'inlined-property').linq.toArray();
 
       // our new virtual properties go here.
       const newVirtualProperties = new Dictionary<VirtualProperty>();

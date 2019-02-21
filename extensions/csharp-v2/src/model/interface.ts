@@ -73,6 +73,7 @@ export class ModelInterface extends Interface implements EnhancedTypeDeclaration
     implData.interfaceImplementation = this;
     this.description = `${schema.details.default.description}`;
 
+    // for each property that the schema has, we expect a property.
     for (const { key: propertyName, value: property } of items(schema.properties)) {
       this.add(new ModelInterfaceProperty(this, property, state.path('properties', propertyName)));
     }

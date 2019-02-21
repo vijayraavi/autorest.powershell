@@ -2,7 +2,7 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-import { KnownMediaType, HeaderProperty, HeaderPropertyType } from '@microsoft.azure/autorest.codemodel-v3';
+import { KnownMediaType, HeaderProperty, HeaderPropertyType, Property } from '@microsoft.azure/autorest.codemodel-v3';
 
 import { camelCase, deconstruct, items, values } from '@microsoft.azure/codegen';
 import { Access, Class, Constructor, Expression, ExpressionOrLiteral, Field, If, InitializedField, Method, Modifier, Namespace, OneOrMoreStatements, Parameter, Statements, System, TypeDeclaration, valueOf, Variable } from '@microsoft.azure/codegen-csharp';
@@ -14,7 +14,7 @@ import { implementIDictionary } from './idictionary';
 import { ModelInterface } from './interface';
 import { JsonSerializableClass } from './model-class-json';
 import { XmlSerializableClass } from './model-class-xml';
-import { ModelProperty } from './property';
+import { ModelProperty, ModelField } from './property';
 import { ProxyProperty } from './proxy-property';
 
 export interface BackingField {
@@ -177,11 +177,37 @@ export class ModelClass extends Class implements EnhancedTypeDeclaration {
 
     // add properties
     for (const { key: propertyName, value: property } of items(this.schema.properties)) {
-      const prop = new ModelProperty(this, property, property.serializedName || propertyName, this.state.path('properties', propertyName));
-      this.add(prop);
+      // each property that is in this schema will get a internal field in this class.
+      const field = new ModelField(this, property, property.serializedName || propertyName, this.state.path('properties', propertyName));
+      this.add(field);
 
-      validationStatements.add(prop.validatePresenceStatement(this.validationEventListener));
-      validationStatements.add(prop.validationStatement(this.validationEventListener));
+      // old - remove this when you are done implementing virtual properties.
+      // const prop = new ModelProperty(this, property, property.serializedName || propertyName, this.state.path('properties', propertyName));
+      // this.add(prop);
+
+      validationStatements.add(field.validatePresenceStatement(this.validationEventListener));
+      validationStatements.add(field.validationStatement(this.validationEventListener));
+    }
+
+    // Add in virtual properties for this.
+    // this includes:
+    // -- properties for the internal fields in this class.
+    // -- properties for the parent model properties that we're pulling thru (implementing via interface)
+    // -- properties for nested properties that we're inlining.
+    for (const eachVirtualProperty of values(this.schema.details.csharp.virtualProperties)) {
+      // eachVirtualProperty.
+      switch (eachVirtualProperty.kind) {
+        case 'my-property':
+          // one of my own properties.
+          // this.add( new Property(eachVirtualProperty.propertyName)
+          break;
+
+        case 'parent-property':
+          break;
+
+        case 'inlined-property':
+          break;
+      }
     }
 
     if (this.schema.additionalProperties) {

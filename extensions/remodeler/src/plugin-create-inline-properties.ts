@@ -64,7 +64,7 @@ function inlineSchema(schema: Schema) {
       // if the child property is low enough (or it's 'properties'), let's create virtual properties for each one.
       for (const childProperty of items(property.schema.details.default.virtualProperties)) {
         virtualProperties[`${name} ${childProperty.key}`] = {
-          kind: 'child-property',
+          kind: 'inlined-property',
           container: property.schema,
           property: childProperty.value.property,
           propertyName: [name, ...childProperty.value.propertyName],

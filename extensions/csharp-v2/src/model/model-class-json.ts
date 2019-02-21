@@ -25,7 +25,7 @@ import { ModelClass } from './model-class';
 import { EnhancedTypeDeclaration } from '../schema/extended-type-declaration';
 import { popTempVar, pushTempVar } from '../schema/primitive';
 
-import { ModelProperty } from './property';
+import { ModelField } from './property';
 
 export class JsonSerializableClass extends Class {
   private btj!: Method;
@@ -67,8 +67,8 @@ export class JsonSerializableClass extends Class {
 
     pushTempVar();
     for (const { value: property } of items(modelClass.schema.properties)) {
-      const prop = modelClass.$<ModelProperty>(property.details.csharp.name);
-      const serializeStatement = (<EnhancedTypeDeclaration>prop.type).serializeToContainerMember(KnownMediaType.Json, prop, container, prop.serializedName);
+      const field = modelClass.$<ModelField>(property.details.csharp.fieldName);
+      const serializeStatement = (<EnhancedTypeDeclaration>field.type).serializeToContainerMember(KnownMediaType.Json, field, container, field.serializedName);
 
       if (property.details.csharp[HeaderProperty] === HeaderPropertyType.Header) {
         // it's a header only property. Don't serialize unless the mode has SerializationMode.IncludeHeaders enabled
@@ -80,7 +80,7 @@ export class JsonSerializableClass extends Class {
           serializeStatements.add(serializeStatement);
         }
       }
-      deserializeStatements.add(prop.assignPrivate((<EnhancedTypeDeclaration>prop.type).deserializeFromContainerMember(KnownMediaType.Json, jsonParameter, prop.serializedName, prop)));
+      deserializeStatements.add(field.assignPrivate((<EnhancedTypeDeclaration>field.type).deserializeFromContainerMember(KnownMediaType.Json, jsonParameter, field.serializedName, field)));
     }
     popTempVar();
 
