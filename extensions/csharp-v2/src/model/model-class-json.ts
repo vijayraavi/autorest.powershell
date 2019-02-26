@@ -66,7 +66,7 @@ export class JsonSerializableClass extends Class {
     }
 
     pushTempVar();
-    for (const { value: property } of items(modelClass.schema.properties)) {
+    for (const property of values(modelClass.schema.properties)) {
       const field = modelClass.$<ModelField>(property.details.csharp.fieldName);
       const serializeStatement = (<EnhancedTypeDeclaration>field.type).serializeToContainerMember(KnownMediaType.Json, field, container, field.serializedName);
 

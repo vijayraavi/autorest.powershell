@@ -1,4 +1,4 @@
-param([Switch]$isolated, [Switch]$test, [Switch]$code)
+param([Switch]$isolated, [Switch]$test, [Switch]$code, [Switch]$Release)
 Push-Location $PSScriptRoot
 $ErrorActionPreference = "Stop"
 
@@ -38,9 +38,13 @@ if(-not $isolated) {
     Pop-Location
     return
 }
-
+$dotnetcfg = 'debug'
+if($Release) {
+  $dotnetcfg = 'release'
+}
 Write-Host -Fore green "Cleaning folders..."
-@('./exports', './obj', './bin') |% { $null = Remove-Item -Recurse -ea 0 $_ }
+@('./obj', './bin') |% { $null = Remove-Item -Recurse -ea 0 $_ }
+$null = (Get-ChildItem -Path 'exports' -Recurse -Exclude 'readme.md' | Remove-Item -Recurse -ea 0)
 
 if(Test-Path ./bin) {
     Pop-Location
@@ -48,10 +52,10 @@ if(Test-Path ./bin) {
 }
 
 Write-Host -Fore green "Compiling private module code"
-$null = dotnet publish --configuration Release --output bin
+$null = dotnet publish --configuration $dotnetcfg --output bin
 if( $lastExitCode -ne 0 ) {
     # if it fails, let's do it again so the output comes out nicely.
-    dotnet publish --configuration Release --output bin
+    dotnet publish --configuration $dotnetcfg --output bin
     Pop-Location
     Write-Error "Compilation failed"
 }
@@ -84,9 +88,15 @@ if( $commands.length -eq 0 ) {
     Write-Error "Unable get commands from private module."
 }
 
+$commands = $commands | Where-Object { $_.Name -ne 'New-ProxyCmdlet' -and $_.Name -ne 'New-TestStub'}
+
 $exportPath = (Join-Path $PSScriptRoot 'exports')
 $null = New-Item -ItemType Directory -Force -Path $exportPath
-Get-ProxyCmdlet -CommandInfo $commands -OutputFolder $exportPath
+New-ProxyCmdlet -CommandInfo $commands -OutputFolder $exportPath
+
+$testPath = (Join-Path $PSScriptRoot 'test')
+$null = New-Item -ItemType Directory -Force -Path $testPath
+New-TestStub -CommandInfo $commands -OutputFolder $testPath
 
 Pop-Location
 Write-Host -Fore green "Done."
