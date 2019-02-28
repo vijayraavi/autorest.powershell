@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { KnownMediaType, HeaderProperty, HeaderPropertyType } from '@microsoft.azure/autorest.codemodel-v3';
-import { Access, Field } from '@microsoft.azure/codegen-csharp';
+import { Access, Field, ImplementedProperty } from '@microsoft.azure/codegen-csharp';
 import { Expression, ExpressionOrLiteral } from '@microsoft.azure/codegen-csharp';
 import { BackedProperty } from '@microsoft.azure/codegen-csharp';
 import { OneOrMoreStatements } from '@microsoft.azure/codegen-csharp';

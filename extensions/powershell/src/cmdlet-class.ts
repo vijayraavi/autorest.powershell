@@ -30,7 +30,7 @@ export class CmdletClass extends Class {
 
   constructor(namespace: Namespace, operation: command.CommandOperation, state: State, objectInitializer?: Partial<CmdletClass>) {
     // generate the 'variant'  part of the name
-    const operationDetails = operation.details.csharp.name; // `${operation.details.csharp.name}${dropBodyParameter ? 'Expanded' : ''}`;
+    const operationDetails = operation.details.csharp.name;
     const variantName = `${state.project.nounPrefix}${operationDetails ? `${operation.noun}_${operationDetails}` : operation.noun}`;
 
     const name = `${operation.verb}${variantName}`;
@@ -60,7 +60,7 @@ export class CmdletClass extends Class {
 
     // construct the class
     this.addClassAttributes(operation, variantName);
-    this.addPowershellParameters(operation);
+    this.addOperationParameters(operation);
 
     // implement IEventListener
     this.implementIEventListener();
@@ -589,7 +589,7 @@ export class CmdletClass extends Class {
     });
   }
 
-  private addPowershellParameters(operation: command.CommandOperation) {
+  private addOperationParameters(operation: command.CommandOperation) {
     for (const parameter of values(operation.parameters)) {
       // these are the parameters that this command expects
       const td = this.state.project.schemaDefinitionResolver.resolveTypeDeclaration(<Schema>parameter.schema, /*parameter.required*/ true, this.state);

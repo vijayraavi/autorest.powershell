@@ -5,7 +5,7 @@
 import { KnownMediaType, HeaderProperty, HeaderPropertyType, Property } from '@microsoft.azure/autorest.codemodel-v3';
 
 import { camelCase, deconstruct, items, values } from '@microsoft.azure/codegen';
-import { Access, Class, Constructor, Expression, ExpressionOrLiteral, Field, If, InitializedField, Method, Modifier, Namespace, OneOrMoreStatements, Parameter, Statements, System, TypeDeclaration, valueOf, Variable } from '@microsoft.azure/codegen-csharp';
+import { Access, Class, Constructor, Expression, ExpressionOrLiteral, Field, If, InitializedField, Method, Modifier, Namespace, OneOrMoreStatements, Parameter, Statements, System, TypeDeclaration, valueOf, Variable, ImplementedProperty } from '@microsoft.azure/codegen-csharp';
 import { ClientRuntime } from '../clientruntime';
 import { State } from '../generator';
 import { EnhancedTypeDeclaration } from '../schema/extended-type-declaration';
@@ -15,7 +15,9 @@ import { ModelInterface } from './interface';
 import { JsonSerializableClass } from './model-class-json';
 import { XmlSerializableClass } from './model-class-xml';
 import { ModelProperty, ModelField } from './property';
-import { ProxyProperty } from './proxy-property';
+import { ProxyProperty, VirtualProperty } from './proxy-property';
+import { Schema } from '../code-model';
+import { runInThisContext } from 'vm';
 
 export interface BackingField {
   field: Field;
@@ -72,7 +74,8 @@ export class ModelClass extends Class implements EnhancedTypeDeclaration {
   /* @internal */ public afj!: Method;
   /* @internal */ public backingFields = new Array<BackingField>();
   /* @internal */ public implementation: ObjectImplementation;
-  /* @internal */ public validationEventListener: Parameter;
+  /* @internal */ public validationEventListenerParameter: Parameter;
+  private validationStatements = new Statements();
   private jsonSerializer: JsonSerializableClass | undefined;
   private xmlSerializer: XmlSerializableClass | undefined;
 
@@ -113,13 +116,13 @@ export class ModelClass extends Class implements EnhancedTypeDeclaration {
       // we have a discriminator value, and we should tell our parent who we are so that they can build a proper deserializer method.
       // um. just how do we *really* know which allOf is polymorphic?
       // that's really sad.
-      for (const { key: eachAllOfIndex, value: eachAllOfValue } of items(this.schema.allOf)) {
-        const parentSchema = eachAllOfValue;
+      for (const { key: eachAllOfIndex, value: parentSchema } of items(this.schema.allOf)) {
         const aState = this.state.path('allOf', eachAllOfIndex);
 
+        // ensure the parent is already built.
         const parentDecl = this.state.project.modelsNamespace.resolveTypeDeclaration(parentSchema, true, aState);
-
         const parentClass = <ModelClass>parentSchema.details.csharp.classImplementation;
+
         if (parentClass.isPolymorphic) {
           // remember this class for later.
           this.parentModelClasses.push(parentClass);
@@ -131,45 +134,12 @@ export class ModelClass extends Class implements EnhancedTypeDeclaration {
     }
 
     const defaultConstructor = this.addMethod(new Constructor(this, { description: `Creates an new <see cref="${this.name}" /> instance.` })); // default constructor for fits and giggles.
-    const validationStatements = new Statements();
-    this.validationEventListener = new Parameter('eventListener', ClientRuntime.IEventListener, { description: `an <see cref="${ClientRuntime.IEventListener}" /> instance that will receive validation events.` });
+
+    this.validationEventListenerParameter = new Parameter('eventListener', ClientRuntime.IEventListener, { description: `an <see cref="${ClientRuntime.IEventListener}" /> instance that will receive validation events.` });
 
     // handle <allOf>s
-    // add an 'implements' for the interface for the allOf.
-    for (const { key: eachSchemaIndex, value: eachSchemaValue } of items(this.schema.allOf)) {
-      // gs01: Critical -- pull thru parent allOf's!
-      const aSchema = eachSchemaValue;
-
-      const aState = this.state.path('allOf', eachSchemaIndex);
-
-      const td = this.state.project.modelsNamespace.resolveTypeDeclaration(aSchema, true, aState);
-      const className = (<ModelClass>aSchema.details.csharp.classImplementation).fullName;
-      const fieldName = camelCase(deconstruct(className.replace(/^.*\./, '')));
-
-      // add the interface as a parent to our interface.
-      const iface = <ModelInterface>aSchema.details.csharp.interfaceImplementation;
-
-      this.modelInterface.interfaces.push(iface);
-
-      // add a field for the inherited values
-      const backingField = this.addField(new InitializedField(`_${fieldName}`, td, `new ${className}()`, { access: Access.Private, description: `Backing field for <see cref="${this.fileName}" />` }));
-      this.backingFields.push({
-        className,
-        typeDeclaration: td,
-        field: backingField
-      });
-      // now, create proxy properties for the members
-      iface.allProperties.map((each) => {
-        // make sure we don't over expose read-only properties.
-        const p = this.add(new ProxyProperty(backingField, each, this.state, { description: `Inherited model <see cref="${iface.name}" /> - ${eachSchemaValue.details.csharp.description}` }));
-        if (each.setAccess === Access.Internal) {
-          p.setterStatements = undefined;
-        }
-        return p;
-      });
-
-      validationStatements.add(td.validatePresence(this.validationEventListener, backingField));
-      validationStatements.add(td.validateValue(this.validationEventListener, backingField));
+    for (const { key: eachSchemaIndex, value: parentSchema } of items(this.schema.allOf)) {
+      this.implementInterfaceForParentSchema(parentSchema, this.state.path('allOf', eachSchemaIndex))
     }
 
     // generate a protected backing field for each
@@ -185,8 +155,8 @@ export class ModelClass extends Class implements EnhancedTypeDeclaration {
       // const prop = new ModelProperty(this, property, property.serializedName || propertyName, this.state.path('properties', propertyName));
       // this.add(prop);
 
-      validationStatements.add(field.validatePresenceStatement(this.validationEventListener));
-      validationStatements.add(field.validationStatement(this.validationEventListener));
+      this.validationStatements.add(field.validatePresenceStatement(this.validationEventListenerParameter));
+      this.validationStatements.add(field.validationStatement(this.validationEventListenerParameter));
     }
 
     // Add in virtual properties for this.
@@ -222,18 +192,18 @@ export class ModelClass extends Class implements EnhancedTypeDeclaration {
 
     }
     if (!this.state.project.storagePipeline) {
-      if (validationStatements.implementation.trim()) {
+      if (this.validationStatements.implementation.trim()) {
         // we do have something to valdiate!
 
         // add the IValidates implementation to this object.
         this.interfaces.push(ClientRuntime.IValidates);
         this.validateMethod = this.addMethod(new Method('Validate', System.Threading.Tasks.Task(), {
           async: Modifier.Async,
-          parameters: [this.validationEventListener],
+          parameters: [this.validationEventListenerParameter],
           description: `Validates that this object meets the validation criteria.`,
           returnsDescription: `A <see cref="${System.Threading.Tasks.Task()}" /> that will be complete when validation is completed.`
         }));
-        this.validateMethod.add(validationStatements);
+        this.validateMethod.add(this.validationStatements);
       }
     }
 
@@ -276,6 +246,74 @@ export class ModelClass extends Class implements EnhancedTypeDeclaration {
       // if (this.state.project.jsonSerialization) {
       // this.jsonSerializer = new JsonSerializableClass(this);
       // }
+    }
+  }
+
+  getPrivateNameForField(baseName: string) {
+    let n = 0;
+    let name = baseName;
+    do {
+      if (!this.fields.find((v, i, a) => v.name === name)) {
+        return name;
+      }
+      name = `${baseName}${n++}`;
+    }
+    while (n < 100);
+    throw new Error(`Unexpected number of private fields with name ${baseName}`);
+  }
+
+  // add an 'implements' for the interface for the allOf.
+  implementInterfaceForParentSchema(parentSchema: Schema, state: State, containerExpression: ExpressionOrLiteral = `this`) {
+    // ensure the parent is already built.
+    const parentTypeDeclaration = this.state.project.modelsNamespace.resolveTypeDeclaration(parentSchema, true, state);
+
+    // add the interface as a parent to our interface.
+    const parentInterface = <ModelInterface>parentSchema.details.csharp.interfaceImplementation;
+    if (this.modelInterface.interfaces.indexOf(parentInterface)) {
+      // already done this one (must be referred to more than once?)
+      return;
+    }
+    this.modelInterface.interfaces.push(parentInterface);
+
+
+    // add a field for the inherited values
+    const className = (<ModelClass>parentSchema.details.csharp.classImplementation).fullName;
+    const fieldName = this.getPrivateNameForField(`_${camelCase(deconstruct(className.replace(/^.*\./, '')))}`);
+
+    const backingField = this.addField(new InitializedField(fieldName, parentTypeDeclaration, `new ${className}()`, { access: Access.Private, description: `Backing field for <see cref="${this.fileName}" />` }));
+    this.backingFields.push({
+      className,
+      typeDeclaration: parentTypeDeclaration,
+      field: backingField
+    });
+
+    // this.addVirtualPropertiesForParent(parentInterface, parentSchema, `${containerExpression}.${backingField}`);
+    for (const each of parentInterface.allProperties) {
+      const vp = new VirtualProperty(each.name, each, each, state, { description: `Inherited model <see cref="${parentInterface.name}" /> - ${parentSchema.details.csharp.description}` });
+      this.add(vp);
+
+      // make sure we don't over expose read-only properties.
+      if (each.setAccess === Access.Internal) {
+        // remove the setter for things that are internal
+        vp.setterStatements = undefined;
+      }
+
+    }
+
+    this.validationStatements.add(parentTypeDeclaration.validatePresence(this.validationEventListenerParameter, backingField));
+    this.validationStatements.add(parentTypeDeclaration.validateValue(this.validationEventListenerParameter, backingField));
+
+    // handle parents of parents
+    let n = 0;
+    for (const each of parentSchema.allOf) {
+      this.implementInterfaceForParentSchema(parentSchema, state.path('allOf', n++), `${containerExpression}.${backingField}`);
+    }
+  }
+
+  addVirtualPropertiesForParent(parentInterface: ModelInterface, parentSchema: Schema, containerExpression: ExpressionOrLiteral = `this`) {
+    // now, create proxy properties for the members
+    for (const each of parentInterface.allProperties) {
+
     }
   }
 
